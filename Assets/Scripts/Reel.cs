@@ -9,7 +9,6 @@ public class Reel : MonoBehaviour
     [Header("Reel Settings")]
     [SerializeField] private float symbolSpacing = 130f;
     [SerializeField] private float spinSpeed = 1800f;
-   // [SerializeField] private float spinDuration = 2f;
     [SerializeField] private int minimumCycles = 3;
 
     private RectTransform[] symbols;
@@ -19,221 +18,164 @@ public class Reel : MonoBehaviour
 
     private void Awake()
     {
-        CacheSymbols();
+        CacheAndInitializeSymbols();
     }
 
-    private void CacheSymbols()
+    /// <summary>
+    /// Centers symbols around Y = 0 on boot so both positive (top) 
+    /// and negative (bottom) positions are populated cleanly.
+    /// </summary>
+    private void CacheAndInitializeSymbols()
     {
         int count = symbolContainer.childCount;
+        if (count == 0) return;
 
         symbols = new RectTransform[count];
+        Canvas.ForceUpdateCanvases();
+
+        int halfCount = count / 2;
 
         for (int i = 0; i < count; i++)
         {
-            symbols[i] = symbolContainer
-                .GetChild(i)
-                .GetComponent<RectTransform>();
+            symbols[i] = symbolContainer.GetChild(i).GetComponent<RectTransform>();
+
+            // Ensure consistent anchors and pivots
+            symbols[i].anchorMin = new Vector2(0.5f, 0.5f);
+            symbols[i].anchorMax = new Vector2(0.5f, 0.5f);
+            symbols[i].pivot = new Vector2(0.5f, 0.5f);
+
+            // Calculate wrapped offset relative to index 0
+            int offset = i;
+            if (offset > halfCount) offset -= count;
+
+            // Align position (e.g., -130, 0, +130, +260...)
+            symbols[i].anchoredPosition = new Vector2(0f, offset * symbolSpacing);
         }
     }
 
     /// <summary>
-    /// Starts the reel spinning.
-    /// The selected symbol will naturally land in the center
-    /// when the reel finishes.
+    /// Starts the reel spinning toward targetIndex. 
+    /// Allows overriding total full spin cycles dynamically.
     /// </summary>
-    public void Spin(int targetIndex)
+    public void Spin(int targetIndex, int cycles = -1)
     {
-        if (isSpinning)
-            return;
+        if (isSpinning) return;
 
         if (symbols == null || symbols.Length == 0)
         {
-            Debug.LogWarning(
-                gameObject.name +
-                " has no symbols."
-            );
-
+            Debug.LogWarning($"{gameObject.name} has no symbols.");
             return;
         }
 
-        if (targetIndex < 0 ||
-            targetIndex >= symbols.Length)
+        if (targetIndex < 0 || targetIndex >= symbols.Length)
         {
-            Debug.LogWarning(
-                "Invalid target index: " +
-                targetIndex
-            );
-
+            Debug.LogWarning($"Invalid target index: {targetIndex}");
             return;
         }
 
-        StartCoroutine(
-            SpinRoutine(targetIndex)
-        );
+        int spinCycles = (cycles > 0) ? cycles : minimumCycles;
+        StartCoroutine(SpinRoutine(targetIndex, spinCycles));
     }
 
-    private IEnumerator SpinRoutine(int targetIndex)
+    private IEnumerator SpinRoutine(int targetIndex, int cyclesToRun)
     {
         isSpinning = true;
 
-        RectTransform target =
-            symbols[targetIndex];
+        RectTransform target = symbols[targetIndex];
 
-        // ---------------------------------------------------------
-        // Determine where the target symbol currently is.
-        // ---------------------------------------------------------
+        float targetY = target.anchoredPosition.y;
+        float cycleDistance = symbolSpacing * symbols.Length;
 
-        float targetY =
-            target.anchoredPosition.y;
-
-        float cycleDistance =
-            symbolSpacing * symbols.Length;
-
-        /*
-         * Symbols move DOWN.
-         *
-         * We want:
-         *
-         * targetY - distance = 0
-         *
-         * So the distance must be targetY.
-         *
-         * If targetY is negative, add complete reel cycles
-         * until the target can reach the center while continuing
-         * to move in the same direction.
-         */
-
-        float targetDistance = targetY;
-
-        while (targetDistance <= 0f)
+        float distanceToCenter = targetY;
+        while (distanceToCenter <= 0f)
         {
-            targetDistance += cycleDistance;
+            distanceToCenter += cycleDistance;
         }
 
-        // Add extra complete cycles so the reel gets
-        // a satisfying long spin.
-        targetDistance +=
-            cycleDistance * minimumCycles;
+        float totalDistance = distanceToCenter + (cycleDistance * cyclesToRun);
 
-        // ---------------------------------------------------------
-        // Spin and naturally slow down over the calculated distance.
-        // ---------------------------------------------------------
-
+        float estimatedDuration = (2f * totalDistance) / (spinSpeed + (spinSpeed * 0.08f));
+        float elapsedTime = 0f;
         float distanceTravelled = 0f;
 
-        while (distanceTravelled < targetDistance)
+        while (elapsedTime < estimatedDuration)
         {
-            float progress =
-                distanceTravelled /
-                targetDistance;
+            elapsedTime += Time.deltaTime;
+            float timeProgress = Mathf.Clamp01(elapsedTime / estimatedDuration);
 
-            /*
-             * Speed starts fast and gradually becomes slower.
-             * This is one continuous movement.
-             */
-            float speedMultiplier =
-                Mathf.SmoothStep(
-                    1f,
-                    0.08f,
-                    progress
-                );
+            float easeMultiplier = Mathf.SmoothStep(1f, 0.08f, timeProgress);
+            float currentSpeed = spinSpeed * easeMultiplier;
 
-            float currentSpeed =
-                spinSpeed * speedMultiplier;
+            float movement = currentSpeed * Time.deltaTime;
 
-            float remainingDistance =
-                targetDistance -
-                distanceTravelled;
-
-            float movement =
-                currentSpeed *
-                Time.deltaTime;
-
-            // Never move farther than the calculated
-            // stopping distance.
-            if (movement > remainingDistance)
+            if (distanceTravelled + movement > totalDistance)
             {
-                movement = remainingDistance;
+                movement = totalDistance - distanceTravelled;
             }
 
             MoveSymbols(movement);
-
             distanceTravelled += movement;
+
+            if (Mathf.Approximately(distanceTravelled, totalDistance))
+                break;
 
             yield return null;
         }
 
-        // ---------------------------------------------------------
-        // The target should now naturally be at the center.
-        //
-        // There is NO repositioning here.
-        // ---------------------------------------------------------
+        SnapToGrid(targetIndex);
 
         isSpinning = false;
     }
 
-    /// <summary>
-    /// Moves all symbols together.
-    /// </summary>
     private void MoveSymbols(float distance)
     {
         for (int i = 0; i < symbols.Length; i++)
         {
-            Vector2 position =
-                symbols[i].anchoredPosition;
-
+            Vector2 position = symbols[i].anchoredPosition;
             position.y -= distance;
-
-            symbols[i].anchoredPosition =
-                position;
+            symbols[i].anchoredPosition = position;
         }
 
         RecycleSymbols();
     }
 
-    /// <summary>
-    /// Loops symbols from bottom to top while maintaining
-    /// the exact spacing between them.
-    /// </summary>
     private void RecycleSymbols()
     {
-        float highestY =
-            float.MinValue;
+        float threshold = -symbolSpacing * 2.5f;
 
-        // Find the highest symbol.
         for (int i = 0; i < symbols.Length; i++)
         {
-            float y =
-                symbols[i].anchoredPosition.y;
-
-            if (y > highestY)
+            if (symbols[i].anchoredPosition.y < threshold)
             {
-                highestY = y;
+                float highestY = float.MinValue;
+                for (int j = 0; j < symbols.Length; j++)
+                {
+                    if (symbols[j].anchoredPosition.y > highestY)
+                    {
+                        highestY = symbols[j].anchoredPosition.y;
+                    }
+                }
+
+                Vector2 pos = symbols[i].anchoredPosition;
+                pos.y = highestY + symbolSpacing;
+                symbols[i].anchoredPosition = pos;
             }
         }
+    }
 
-        // Recycle symbols that have moved below
-        // the visible reel area.
-        for (int i = 0; i < symbols.Length; i++)
+    private void SnapToGrid(int targetIndex)
+    {
+        int count = symbols.Length;
+        int halfCount = count / 2;
+
+        for (int i = 0; i < count; i++)
         {
-            RectTransform symbol =
-                symbols[i];
+            int offset = i - targetIndex;
 
-            if (symbol.anchoredPosition.y <
-                -symbolSpacing * 4f)
-            {
-                Vector2 position =
-                    symbol.anchoredPosition;
+            if (offset > halfCount) offset -= count;
+            if (offset < -halfCount) offset += count;
 
-                position.y =
-                    highestY + symbolSpacing;
-
-                symbol.anchoredPosition =
-                    position;
-
-                highestY =
-                    position.y;
-            }
+            symbols[i].anchoredPosition = new Vector2(0f, offset * symbolSpacing);
         }
     }
 }

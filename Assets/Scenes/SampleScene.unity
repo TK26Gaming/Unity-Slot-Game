@@ -148,9 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3c0d48fa7c28b724583fd93c1870d14f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
-  reel1: {fileID: 742531915}
-  reel2: {fileID: 480423944}
-  reel3: {fileID: 1722551493}
+  reelLeft: {fileID: 480423944}
+  reelCenter: {fileID: 742531915}
+  reelRight: {fileID: 1722551493}
   reelStopDelay: 0.35
   cherryPayout: 5
   bellPayout: 10
@@ -922,7 +922,6 @@ MonoBehaviour:
   symbolContainer: {fileID: 1850698854}
   symbolSpacing: 130
   spinSpeed: 2000
-  spinDuration: 2
   minimumCycles: 3
 --- !u!1 &500167868
 GameObject:
@@ -1703,7 +1702,6 @@ MonoBehaviour:
   symbolContainer: {fileID: 1352374282}
   symbolSpacing: 130
   spinSpeed: 2000
-  spinDuration: 2
   minimumCycles: 3
 --- !u!1 &862626482
 GameObject:
@@ -2454,7 +2452,6 @@ MonoBehaviour:
   symbolContainer: {fileID: 862626483}
   symbolSpacing: 130
   spinSpeed: 2000
-  spinDuration: 2
   minimumCycles: 3
 --- !u!1 &1825888042
 GameObject:

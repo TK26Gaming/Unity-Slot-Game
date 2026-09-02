@@ -1,174 +1,124 @@
+using System;
 using System.Collections;
 using UnityEngine;
+using Random = UnityEngine.Random;
+
 
 public class GameManager : MonoBehaviour
 {
-    [Header("Reels")]
-    [SerializeField] private Reel reel1; // Center
-    [SerializeField] private Reel reel2; // Left
-    [SerializeField] private Reel reel3; // Right
+    [Header("Reel References")]
+    [SerializeField] private Reel reelLeft;
+    [SerializeField] private Reel reelCenter;
+    [SerializeField] private Reel reelRight;
 
     [Header("Spin Settings")]
     [SerializeField] private float reelStopDelay = 0.35f;
 
-    [Header("Payout Settings")]
+    [Header("Payout Multipliers")]
     [SerializeField] private int cherryPayout = 5;
     [SerializeField] private int bellPayout = 10;
     [SerializeField] private int barPayout = 20;
     [SerializeField] private int sevenPayout = 50;
 
-    // Exact symbol order used by every reel.
-    //
-    // 0 = 7
-    // 1 = Cherry
-    // 2 = Bell
-    // 3 = BAR
-    // 4 = 7
-    // 5 = Bell
-    // 6 = BAR
+    // Events for UI / Audio triggers
+    public event Action OnSpinStarted;
+    public event Action<int> OnSpinWon;
+    public event Action OnSpinLost;
+
     private readonly SlotSymbol[] reelLayout =
     {
-        SlotSymbol.Seven,
-        SlotSymbol.Cherry,
-        SlotSymbol.Bell,
-        SlotSymbol.Bar,
-        SlotSymbol.Seven,
-        SlotSymbol.Bell,
-        SlotSymbol.Bar
+        SlotSymbol.Seven,  // Index 0
+        SlotSymbol.Cherry, // Index 1
+        SlotSymbol.Bell,   // Index 2
+        SlotSymbol.Bar,    // Index 3
+        SlotSymbol.Seven,  // Index 4
+        SlotSymbol.Bell,   // Index 5
+        SlotSymbol.Bar     // Index 6
     };
 
     private bool isSpinning;
-
     public bool IsSpinning => isSpinning;
 
     private void Update()
     {
-        // Temporary testing input.
-        // This will later be replaced by the lever.
         if (Input.GetKeyDown(KeyCode.Space) && !isSpinning)
         {
             StartSpin();
         }
     }
 
-    /// <summary>
-    /// Starts a complete slot machine spin.
-    /// </summary>
     public void StartSpin()
     {
-        if (isSpinning)
-            return;
-
+        if (isSpinning) return;
         StartCoroutine(SpinAllReels());
     }
 
-    /// <summary>
-    /// Spins all three reels with independent random results.
-    /// </summary>
     private IEnumerator SpinAllReels()
     {
         isSpinning = true;
+        OnSpinStarted?.Invoke();
 
-        // Generate independent random positions.
-        int reel1ResultIndex = GetRandomReelIndex();
-        int reel2ResultIndex = GetRandomReelIndex();
-        int reel3ResultIndex = GetRandomReelIndex();
+        // 1. Generate independent target results
+        int leftIndex = GetRandomReelIndex();
+        int centerIndex = GetRandomReelIndex();
+        int rightIndex = GetRandomReelIndex();
 
-        // Convert positions into symbols.
-        SlotSymbol reel1Result = reelLayout[reel1ResultIndex];
-        SlotSymbol reel2Result = reelLayout[reel2ResultIndex];
-        SlotSymbol reel3Result = reelLayout[reel3ResultIndex];
+        SlotSymbol leftResult = reelLayout[leftIndex];
+        SlotSymbol centerResult = reelLayout[centerIndex];
+        SlotSymbol rightResult = reelLayout[rightIndex];
 
-        Debug.Log(
-            $"Spin Results | " +
-            $"LEFT (Reel2): {reel2Result} [{reel2ResultIndex}] | " +
-            $"CENTER (Reel1): {reel1Result} [{reel1ResultIndex}] | " +
-            $"RIGHT (Reel3): {reel3Result} [{reel3ResultIndex}]"
-        );
+        Debug.Log($"Spin Targets | LEFT: {leftResult} [{leftIndex}] | CENTER: {centerResult} [{centerIndex}] | RIGHT: {rightResult} [{rightIndex}]");
 
-        // CENTER reel.
-        reel1.Spin(reel1ResultIndex);
+        // 2. START ALL REELS AT ONCE WITH STAGGERED CYCLES
+        reelLeft.Spin(leftIndex, 5);     // 5 spins
+        reelCenter.Spin(centerIndex, 7); // 7 spins (5 + 2)
+        reelRight.Spin(rightIndex, 9);   // 9 spins (7 + 2)
 
+        // 3. LANDING SEQUENCE: Left -> Center -> Right
+        yield return new WaitUntil(() => !reelLeft.IsSpinning);
         yield return new WaitForSeconds(reelStopDelay);
 
-        // LEFT reel.
-        reel2.Spin(reel2ResultIndex);
-
+        yield return new WaitUntil(() => !reelCenter.IsSpinning);
         yield return new WaitForSeconds(reelStopDelay);
 
-        // RIGHT reel.
-        reel3.Spin(reel3ResultIndex);
+        yield return new WaitUntil(() => !reelRight.IsSpinning);
 
-        // Wait until every reel has stopped.
-        yield return new WaitUntil(() =>
-            !reel1.IsSpinning &&
-            !reel2.IsSpinning &&
-            !reel3.IsSpinning
-        );
-
-        CheckResult(
-            reel1Result,
-            reel2Result,
-            reel3Result
-        );
+        // 4. Check results
+        CheckResult(leftResult, centerResult, rightResult);
 
         isSpinning = false;
     }
 
-    /// <summary>
-    /// Returns a random position from the seven-position reel.
-    /// </summary>
     private int GetRandomReelIndex()
     {
         return Random.Range(0, reelLayout.Length);
     }
 
-    /// <summary>
-    /// Checks whether all three reels show the same symbol.
-    /// </summary>
-    private void CheckResult(
-        SlotSymbol reel1Result,
-        SlotSymbol reel2Result,
-        SlotSymbol reel3Result)
+    private void CheckResult(SlotSymbol left, SlotSymbol center, SlotSymbol right)
     {
-        bool playerWon =
-            reel1Result == reel2Result &&
-            reel2Result == reel3Result;
+        bool playerWon = (left == center) && (center == right);
 
         if (!playerWon)
         {
-            Debug.Log("No win this time.");
+            Debug.Log("No win this spin.");
+            OnSpinLost?.Invoke();
             return;
         }
 
-        int payout = GetPayout(reel1Result);
-
-        Debug.Log(
-            $"WIN! {reel1Result} x3 | Payout: {payout}x"
-        );
+        int payout = GetPayout(left);
+        Debug.Log($"<b>WIN!</b> Matched 3x {left} | Payout: {payout}x");
+        OnSpinWon?.Invoke(payout);
     }
 
-    /// <summary>
-    /// Returns the payout multiplier for a matching symbol.
-    /// </summary>
     private int GetPayout(SlotSymbol symbol)
     {
-        switch (symbol)
+        return symbol switch
         {
-            case SlotSymbol.Cherry:
-                return cherryPayout;
-
-            case SlotSymbol.Bell:
-                return bellPayout;
-
-            case SlotSymbol.Bar:
-                return barPayout;
-
-            case SlotSymbol.Seven:
-                return sevenPayout;
-
-            default:
-                return 0;
-        }
+            SlotSymbol.Cherry => cherryPayout,
+            SlotSymbol.Bell => bellPayout,
+            SlotSymbol.Bar => barPayout,
+            SlotSymbol.Seven => sevenPayout,
+            _ => 0
+        };
     }
 }
