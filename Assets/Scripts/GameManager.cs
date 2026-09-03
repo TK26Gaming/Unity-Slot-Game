@@ -11,6 +11,9 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Reel reelCenter;
     [SerializeField] private Reel reelRight;
 
+    [Header("Balance Reference")]
+    [SerializeField] private BalanceManager balanceManager;
+
     [Header("Spin Settings")]
     [SerializeField] private float reelStopDelay = 0.35f;
 
@@ -24,6 +27,7 @@ public class GameManager : MonoBehaviour
     public event Action OnSpinStarted;
     public event Action<int> OnSpinWon;
     public event Action OnSpinLost;
+    public event Action OnInsufficientBalance;
 
     private readonly SlotSymbol[] reelLayout =
     {
@@ -39,17 +43,32 @@ public class GameManager : MonoBehaviour
     private bool isSpinning;
     public bool IsSpinning => isSpinning;
 
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.Space) && !isSpinning)
-        {
-            StartSpin();
-        }
-    }
+    //private void Update()
+    //{
+    //    if (Input.GetKeyDown(KeyCode.Space) && !isSpinning)
+    //    {
+    //        StartSpin();
+    //    }
+    //}
 
     public void StartSpin()
     {
-        if (isSpinning) return;
+        if (isSpinning)
+            return;
+
+        if (balanceManager == null)
+        {
+            Debug.LogWarning("BalanceManager is not assigned.");
+            return;
+        }
+
+        if (balanceManager.Balance < balanceManager.CurrentBet)
+        {
+            Debug.LogWarning("Not enough balance to spin.");
+            OnInsufficientBalance?.Invoke();
+            return;
+        }
+
         StartCoroutine(SpinAllReels());
     }
 
@@ -67,12 +86,16 @@ public class GameManager : MonoBehaviour
         SlotSymbol centerResult = reelLayout[centerIndex];
         SlotSymbol rightResult = reelLayout[rightIndex];
 
-        Debug.Log($"Spin Targets | LEFT: {leftResult} [{leftIndex}] | CENTER: {centerResult} [{centerIndex}] | RIGHT: {rightResult} [{rightIndex}]");
+        Debug.Log(
+            $"Spin Targets | LEFT: {leftResult} [{leftIndex}] | " +
+            $"CENTER: {centerResult} [{centerIndex}] | " +
+            $"RIGHT: {rightResult} [{rightIndex}]"
+        );
 
         // 2. START ALL REELS AT ONCE WITH STAGGERED CYCLES
-        reelLeft.Spin(leftIndex, 5);     // 5 spins
-        reelCenter.Spin(centerIndex, 7); // 7 spins (5 + 2)
-        reelRight.Spin(rightIndex, 9);   // 9 spins (7 + 2)
+        reelLeft.Spin(leftIndex, 5);
+        reelCenter.Spin(centerIndex, 7);
+        reelRight.Spin(rightIndex, 9);
 
         // 3. LANDING SEQUENCE: Left -> Center -> Right
         yield return new WaitUntil(() => !reelLeft.IsSpinning);
@@ -94,7 +117,10 @@ public class GameManager : MonoBehaviour
         return Random.Range(0, reelLayout.Length);
     }
 
-    private void CheckResult(SlotSymbol left, SlotSymbol center, SlotSymbol right)
+    private void CheckResult(
+        SlotSymbol left,
+        SlotSymbol center,
+        SlotSymbol right)
     {
         bool playerWon = (left == center) && (center == right);
 
@@ -106,7 +132,12 @@ public class GameManager : MonoBehaviour
         }
 
         int payout = GetPayout(left);
-        Debug.Log($"<b>WIN!</b> Matched 3x {left} | Payout: {payout}x");
+
+        Debug.Log(
+            $"<b>WIN!</b> Matched 3x {left} | " +
+            $"Payout: {payout}x"
+        );
+
         OnSpinWon?.Invoke(payout);
     }
 
