@@ -213,5 +213,3 @@ The following were tested in Unity:
 ## Author
 
 **Taher Kachwala**
-
-GitHub: https://github.com/TK26Gaming/Slot-Game-Task
